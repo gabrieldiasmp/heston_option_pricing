@@ -1,0 +1,171 @@
+
+<div class="cell border-box-sizing text_cell rendered"><div class="prompt input_prompt">
+</div><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h1 id="Precificando-derivativos-atrav&#233;s-do-modelo-de-volatilidade">Precificando derivativos atrav&#233;s do modelo de volatilidade<a class="anchor-link" href="#Precificando-derivativos-atrav&#233;s-do-modelo-de-volatilidade">&#182;</a></h1>\begin{align}
+\nabla \times \vec{\mathbf{B}} -\, \frac1c\, \frac{\partial\vec{\mathbf{E}}}{\partial t} &amp; = \frac{4\pi}{c}\vec{\mathbf{j}} \\
+\nabla \cdot \vec{\mathbf{E}} &amp; = 4 \pi \rho \\
+\nabla \times \vec{\mathbf{E}}\, +\, \frac1c\, \frac{\partial\vec{\mathbf{B}}}{\partial t} &amp; = \vec{\mathbf{0}} \\
+\nabla \cdot \vec{\mathbf{B}} &amp; = 0
+\end{align}
+</div>
+</div>
+</div>
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+<div class="prompt input_prompt">In&nbsp;[7]:</div>
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1">##Bibliotecas necessárias</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">scipy</span> <span class="k">import</span> <span class="n">inf</span><span class="p">,</span> <span class="n">pi</span><span class="p">,</span> <span class="n">exp</span><span class="p">,</span> <span class="n">linspace</span><span class="p">,</span> <span class="n">zeros</span><span class="p">,</span> <span class="n">real</span><span class="p">,</span> <span class="n">imag</span><span class="p">,</span> <span class="n">array</span><span class="p">,</span> <span class="n">log</span>
+<span class="kn">from</span> <span class="nn">scipy.stats</span> <span class="k">import</span> <span class="n">norm</span>
+<span class="kn">from</span> <span class="nn">scipy.integrate</span> <span class="k">import</span> <span class="n">quad</span>
+<span class="kn">from</span> <span class="nn">scipy.optimize</span> <span class="k">import</span> <span class="n">differential_evolution</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">matplotlib</span> <span class="k">import</span> <span class="n">pyplot</span>
+<span class="kn">import</span> <span class="nn">math</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+<div class="prompt input_prompt">In&nbsp;[&nbsp;]:</div>
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1">##Primeiros tratamentos dos dados</span>
+
+<span class="n">iv_surface</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s2">&quot;data/spy_options.csv&quot;</span><span class="p">)</span>
+<span class="n">iv_surface</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;Strike&#39;</span><span class="p">:</span> <span class="s1">&#39;strike&#39;</span><span class="p">,</span>
+                           <span class="s1">&#39;Implied Volatility&#39;</span><span class="p">:</span> <span class="s1">&#39;iv&#39;</span><span class="p">,</span>
+                           <span class="s1">&#39;Last Price&#39;</span><span class="p">:</span> <span class="s2">&quot;price&quot;</span><span class="p">},</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="n">iv_surface</span><span class="p">[</span><span class="s2">&quot;moneyness&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">iv_surface</span><span class="p">[</span><span class="s2">&quot;spot&quot;</span><span class="p">]</span> <span class="o">/</span> <span class="n">iv_surface</span><span class="p">[</span><span class="s2">&quot;strike&quot;</span><span class="p">]</span>
+
+<span class="n">iv_surface</span> <span class="o">=</span> <span class="n">iv_surface</span><span class="o">.</span><span class="n">loc</span><span class="p">[(</span><span class="n">iv_surface</span><span class="p">[</span><span class="s2">&quot;tipo&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;calls&quot;</span><span class="p">)</span> <span class="o">&amp;</span> 
+<span class="p">(</span><span class="n">iv_surface</span><span class="p">[</span><span class="s2">&quot;t_ano&quot;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">0.1</span><span class="p">)</span> <span class="o">&amp;</span> 
+<span class="p">(</span><span class="n">iv_surface</span><span class="p">[</span><span class="s2">&quot;t_ano&quot;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">)</span> <span class="o">&amp;</span> 
+<span class="p">(</span><span class="n">iv_surface</span><span class="p">[</span><span class="s2">&quot;moneyness&quot;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mf">1.66</span><span class="p">)</span> <span class="o">&amp;</span> 
+<span class="p">(</span><span class="n">iv_surface</span><span class="p">[</span><span class="s2">&quot;moneyness&quot;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">0.7</span><span class="p">)</span> <span class="o">&amp;</span> 
+<span class="p">(</span><span class="n">iv_surface</span><span class="p">[</span><span class="s2">&quot;iv&quot;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;</span>
+<span class="p">(</span><span class="n">iv_surface</span><span class="p">[</span><span class="s2">&quot;strike&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">([</span><span class="mi">180</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">220</span><span class="p">,</span> <span class="mi">240</span><span class="p">,</span> <span class="mi">270</span><span class="p">,</span> <span class="mi">299</span><span class="p">,</span> <span class="mi">315</span><span class="p">,</span> <span class="mi">330</span><span class="p">,</span> <span class="mi">350</span><span class="p">,</span> <span class="mi">370</span><span class="p">,</span> <span class="mi">400</span><span class="p">,</span> <span class="mi">420</span><span class="p">])),</span> 
+<span class="p">[</span><span class="s2">&quot;spot&quot;</span><span class="p">,</span> <span class="s2">&quot;strike&quot;</span><span class="p">,</span> <span class="s1">&#39;moneyness&#39;</span><span class="p">,</span> <span class="s2">&quot;price&quot;</span><span class="p">,</span> <span class="s2">&quot;iv&quot;</span><span class="p">,</span> <span class="s2">&quot;tipo&quot;</span><span class="p">,</span> <span class="s2">&quot;t_ano&quot;</span><span class="p">]]</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+<div class="cell border-box-sizing text_cell rendered"><div class="prompt input_prompt">
+</div><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h1 id="Fun&#231;&#245;es-necess&#225;rias">Fun&#231;&#245;es necess&#225;rias<a class="anchor-link" href="#Fun&#231;&#245;es-necess&#225;rias">&#182;</a></h1><p>Aqui, chamamos as funções necessárias</p>
+
+</div>
+</div>
+</div>
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+<div class="prompt input_prompt">In&nbsp;[&nbsp;]:</div>
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">heston_phi</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">tau</span><span class="p">,</span> <span class="o">*</span><span class="n">parms</span><span class="p">):</span>
+
+    <span class="c1">## PARÂMETROS</span>
+    <span class="c1">## v0: volatilidade inicial</span>
+    <span class="c1">## v_long: média de longo prazo da volatilidade</span>
+    <span class="c1">## mean_reversion: velocidade da reversão à média</span>
+    <span class="c1">## vol_vol: volatilidade da volatilidade</span>
+    <span class="c1">## rho: correlação entre o ativo subjacente e a volatilidade</span>
+    <span class="c1">## tau: prazo de expiração</span>
+    <span class="c1">## S0: preço inicial do ativo subjacente</span>
+    <span class="c1">## K: preço de strike</span>
+
+    <span class="n">v0</span><span class="p">,</span> <span class="n">v_long</span><span class="p">,</span> <span class="n">mean_reversion</span><span class="p">,</span> <span class="n">vol_vol</span><span class="p">,</span> <span class="n">rho</span> <span class="o">=</span> <span class="n">parms</span>
+
+    <span class="n">b</span> <span class="o">=</span> <span class="n">mean_reversion</span> <span class="o">+</span> <span class="mi">1</span><span class="n">j</span><span class="o">*</span><span class="n">rho</span><span class="o">*</span><span class="n">vol_vol</span><span class="o">*</span><span class="n">k</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span> <span class="n">b</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="p">(</span><span class="n">vol_vol</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">*</span><span class="n">k</span><span class="o">*</span><span class="p">(</span><span class="n">k</span><span class="o">-</span><span class="mi">1</span><span class="n">j</span><span class="p">)</span> <span class="p">)</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="p">(</span><span class="n">b</span> <span class="o">-</span> <span class="n">d</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">b</span> <span class="o">+</span> <span class="n">d</span><span class="p">)</span>
+    <span class="n">T_m</span> <span class="o">=</span> <span class="p">(</span><span class="n">b</span> <span class="o">-</span> <span class="n">d</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">vol_vol</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">T</span> <span class="o">=</span> <span class="n">T_m</span> <span class="o">*</span> <span class="p">(</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">d</span><span class="o">*</span><span class="n">tau</span><span class="p">)</span> <span class="p">)</span><span class="o">/</span><span class="p">(</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">g</span><span class="o">*</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">d</span><span class="o">*</span><span class="n">tau</span><span class="p">)</span> <span class="p">)</span>
+    <span class="n">W</span> <span class="o">=</span> <span class="n">mean_reversion</span> <span class="o">*</span> <span class="n">v_long</span> <span class="o">*</span> <span class="p">(</span> <span class="n">tau</span><span class="o">*</span><span class="n">T_m</span> <span class="o">-</span> <span class="mi">2</span><span class="o">*</span><span class="n">log</span><span class="p">(</span> <span class="p">(</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">g</span><span class="o">*</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">d</span><span class="o">*</span><span class="n">tau</span><span class="p">)</span> <span class="p">)</span><span class="o">/</span><span class="p">(</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">g</span> <span class="p">)</span> <span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">vol_vol</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">exp</span><span class="p">(</span><span class="n">W</span> <span class="o">+</span> <span class="n">v0</span><span class="o">*</span><span class="n">T</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">heston_phi_transform</span><span class="p">(</span><span class="n">tau</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="n">parms</span><span class="p">):</span>
+    <span class="n">integrand</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">k</span><span class="p">:</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">real</span><span class="p">(</span> <span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="n">j</span><span class="o">*</span><span class="n">k</span><span class="o">*</span><span class="n">x</span><span class="p">)</span> <span class="o">*</span> <span class="n">heston_phi</span><span class="p">(</span><span class="n">k</span> <span class="o">+</span> <span class="mf">0.5</span><span class="o">*</span><span class="mi">1</span><span class="n">j</span><span class="p">,</span> <span class="n">tau</span><span class="p">,</span> <span class="o">*</span><span class="n">parms</span><span class="p">)</span> <span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">k</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="mf">1.0</span><span class="o">/</span><span class="mf">4.0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">quad</span><span class="p">(</span><span class="n">integrand</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">50</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+<span class="k">def</span> <span class="nf">heston_call</span><span class="p">(</span><span class="n">F</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">tau</span><span class="p">,</span> <span class="o">*</span><span class="n">parms</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Heston call&#39;&#39;&#39;</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">log</span><span class="p">(</span><span class="n">F</span><span class="o">/</span><span class="n">K</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">F</span> <span class="o">-</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">K</span><span class="o">*</span><span class="n">F</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">pi</span><span class="p">))</span> <span class="o">*</span> <span class="n">heston_phi_transform</span><span class="p">(</span><span class="n">tau</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="n">parms</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">heston_evaluate</span><span class="p">(</span><span class="n">chromo</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;docstring for heston_evaluate&quot;&quot;&quot;</span>
+    <span class="n">v0</span> <span class="o">=</span> <span class="n">chromo</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">v_long</span> <span class="o">=</span> <span class="n">chromo</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">mean_reversion</span> <span class="o">=</span> <span class="n">chromo</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+    <span class="n">vol_vol</span> <span class="o">=</span> <span class="n">chromo</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+    <span class="n">rho</span> <span class="o">=</span> <span class="n">chromo</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span>
+
+    <span class="n">lista_erro</span> <span class="o">=</span> <span class="p">[]</span>    
+  
+    <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">iv_surface</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+        <span class="n">lista_erro</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;price&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">heston_call</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;spot&quot;</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;strike&quot;</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;t_ano&quot;</span><span class="p">],</span> <span class="n">v0</span><span class="p">,</span> <span class="n">v_long</span><span class="p">,</span> <span class="n">mean_reversion</span><span class="p">,</span> <span class="n">vol_vol</span><span class="p">,</span> <span class="n">rho</span><span class="p">))</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="n">diffs</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">lista_erro</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">diffs</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+<div class="cell border-box-sizing text_cell rendered"><div class="prompt input_prompt">
+</div><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h1 id="Calibra&#231;&#227;o-do-modelo">Calibra&#231;&#227;o do modelo<a class="anchor-link" href="#Calibra&#231;&#227;o-do-modelo">&#182;</a></h1><p>Aqui vamos calibrar o modelo</p>
+
+</div>
+</div>
+</div>
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+<div class="prompt input_prompt">In&nbsp;[&nbsp;]:</div>
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1">##Calibrando o modelo via Differential Evolution</span>
+
+
+<span class="n">result</span> <span class="o">=</span> <span class="n">differential_evolution</span><span class="p">(</span><span class="n">heston_evaluate</span><span class="p">,</span>
+    <span class="n">workers</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">disp</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">bounds</span> <span class="o">=</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)],</span>
+    <span class="n">maxiter</span> <span class="o">=</span> <span class="mi">30</span><span class="p">)</span>
+
+<span class="n">optimized_parameters</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">x</span>
+
+<span class="n">price_pred_list</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">iv_surface</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+    <span class="n">price_pred_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">heston_ucall</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;spot&quot;</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;strike&quot;</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;t_ano&quot;</span><span class="p">],</span> <span class="o">*</span><span class="n">optimized_parameters</span><span class="p">))</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+ 
+
